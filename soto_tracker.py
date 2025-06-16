@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 import requests
 import random
 import gc  # For garbage collection
+from flask import Flask, render_template
+import threading
 
 # Suppress SyntaxWarnings from tweepy
 warnings.filterwarnings("ignore", category=SyntaxWarning)
@@ -19,6 +21,9 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Initialize Flask app
+app = Flask(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -38,6 +43,10 @@ if not TEST_MODE:
 
 # Keep track of processed at-bats
 processed_at_bats = set()
+
+# Track last check time and status
+last_check_time = None
+last_check_status = "Initializing..."
 
 def get_soto_id():
     """Get Juan Soto's MLB ID"""
@@ -150,100 +159,167 @@ def generate_test_at_bat():
         
         return result
 
-def main():
-    soto_id = get_soto_id()
-    logger.info(f"Starting to track Juan Soto (ID: {soto_id})")
-    logger.info(f"Running in {'TEST' if TEST_MODE else 'PRODUCTION'} mode")
+def check_soto_at_bats():
+    """Check for Soto's at-bats and tweet if found"""
+    global last_check_time, last_check_status
     
-    while True:
-        try:
-            if TEST_MODE:
-                # Generate test at-bat
-                test_at_bat = generate_test_at_bat()
-                at_bat_id = f"{test_at_bat['game_date']}_{test_at_bat['inning']}_{test_at_bat['at_bat_number']}"
+    try:
+        soto_id = get_soto_id()
+        
+        if TEST_MODE:
+            # Generate test at-bat
+            test_at_bat = generate_test_at_bat()
+            at_bat_id = f"{test_at_bat['game_date']}_{test_at_bat['inning']}_{test_at_bat['at_bat_number']}"
+            
+            if at_bat_id not in processed_at_bats:
+                play_data = {
+                    'type': 'home_run' if test_at_bat['events'] == 'home_run' else 'other',
+                    'description': test_at_bat['description'],
+                    'exit_velocity': test_at_bat.get('launch_speed', 'N/A'),
+                    'launch_angle': test_at_bat.get('launch_angle', 'N/A'),
+                    'distance': test_at_bat.get('hit_distance_sc', 'N/A'),
+                    'parks': test_at_bat.get('barrel', 'N/A'),
+                    'hr_number': test_at_bat.get('home_run', 0)
+                }
                 
-                if at_bat_id not in processed_at_bats:
-                    play_data = {
-                        'type': 'home_run' if test_at_bat['events'] == 'home_run' else 'other',
-                        'description': test_at_bat['description'],
-                        'exit_velocity': test_at_bat.get('launch_speed', 'N/A'),
-                        'launch_angle': test_at_bat.get('launch_angle', 'N/A'),
-                        'distance': test_at_bat.get('hit_distance_sc', 'N/A'),
-                        'parks': test_at_bat.get('barrel', 'N/A'),
-                        'hr_number': test_at_bat.get('home_run', 0)
-                    }
+                # Add strikeout data if it's a strikeout
+                if test_at_bat['events'] == 'strikeout':
+                    play_data.update({
+                        'strikeout_type': test_at_bat.get('strikeout_type', 'N/A'),
+                        'pitch_type': test_at_bat.get('pitch_type', 'N/A'),
+                        'pitch_speed': test_at_bat.get('pitch_speed', 'N/A'),
+                        'pitch_location': test_at_bat.get('pitch_location', 'N/A')
+                    })
+                
+                tweet = format_tweet(play_data)
+                if TEST_MODE:
+                    logger.info(f"TEST MODE - Would tweet: {tweet}")
+                else:
+                    client.create_tweet(text=tweet)
+                    logger.info(f"Tweeted: {tweet}")
+                
+                processed_at_bats.add(at_bat_id)
+                last_check_status = f"Found test at-bat: {test_at_bat['description']}"
+        else:
+            # Get current game data
+            game_data = get_current_game()
+            
+            # Get Soto's recent at-bats
+            recent_at_bats = statcast_batter(
+                start_dt=datetime.now().strftime("%Y-%m-%d"),
+                end_dt=datetime.now().strftime("%Y-%m-%d"),
+                player_id=soto_id
+            )
+            
+            if recent_at_bats is not None and not recent_at_bats.empty:
+                for _, at_bat in recent_at_bats.iterrows():
+                    at_bat_id = f"{at_bat['game_date']}_{at_bat['inning']}_{at_bat['at_bat_number']}"
                     
-                    # Add strikeout data if it's a strikeout
-                    if test_at_bat['events'] == 'strikeout':
-                        play_data.update({
-                            'strikeout_type': test_at_bat.get('strikeout_type', 'N/A'),
-                            'pitch_type': test_at_bat.get('pitch_type', 'N/A'),
-                            'pitch_speed': test_at_bat.get('pitch_speed', 'N/A'),
-                            'pitch_location': test_at_bat.get('pitch_location', 'N/A')
-                        })
-                    
-                    tweet = format_tweet(play_data)
-                    if TEST_MODE:
-                        logger.info(f"TEST MODE - Would tweet: {tweet}")
-                    else:
+                    if at_bat_id not in processed_at_bats:
+                        play_data = {
+                            'type': 'home_run' if at_bat['events'] == 'home_run' else 'other',
+                            'description': at_bat['description'],
+                            'exit_velocity': at_bat.get('launch_speed', 'N/A'),
+                            'launch_angle': at_bat.get('launch_angle', 'N/A'),
+                            'distance': at_bat.get('hit_distance_sc', 'N/A'),
+                            'parks': at_bat.get('barrel', 'N/A'),
+                            'hr_number': at_bat.get('home_run', 0)
+                        }
+                        
+                        # Add strikeout data if it's a strikeout
+                        if at_bat['events'] == 'strikeout':
+                            play_data.update({
+                                'strikeout_type': 'looking' if at_bat.get('strikeout_type', '').lower() == 'looking' else 'swinging',
+                                'pitch_type': at_bat.get('pitch_type', 'N/A'),
+                                'pitch_speed': at_bat.get('release_speed', 'N/A'),
+                                'pitch_location': f"{at_bat.get('plate_x', 'N/A')}, {at_bat.get('plate_z', 'N/A')}"
+                            })
+                        
+                        tweet = format_tweet(play_data)
                         client.create_tweet(text=tweet)
                         logger.info(f"Tweeted: {tweet}")
-                    
-                    processed_at_bats.add(at_bat_id)
-            else:
-                # Get current game data
-                game_data = get_current_game()
-                
-                # Get Soto's recent at-bats
-                recent_at_bats = statcast_batter(
-                    start_dt=datetime.now().strftime("%Y-%m-%d"),
-                    end_dt=datetime.now().strftime("%Y-%m-%d"),
-                    player_id=soto_id
-                )
-                
-                if recent_at_bats is not None and not recent_at_bats.empty:
-                    for _, at_bat in recent_at_bats.iterrows():
-                        at_bat_id = f"{at_bat['game_date']}_{at_bat['inning']}_{at_bat['at_bat_number']}"
                         
-                        if at_bat_id not in processed_at_bats:
-                            play_data = {
-                                'type': 'home_run' if at_bat['events'] == 'home_run' else 'other',
-                                'description': at_bat['description'],
-                                'exit_velocity': at_bat.get('launch_speed', 'N/A'),
-                                'launch_angle': at_bat.get('launch_angle', 'N/A'),
-                                'distance': at_bat.get('hit_distance_sc', 'N/A'),
-                                'parks': at_bat.get('barrel', 'N/A'),
-                                'hr_number': at_bat.get('home_run', 0)
-                            }
-                            
-                            # Add strikeout data if it's a strikeout
-                            if at_bat['events'] == 'strikeout':
-                                play_data.update({
-                                    'strikeout_type': 'looking' if at_bat.get('strikeout_type', '').lower() == 'looking' else 'swinging',
-                                    'pitch_type': at_bat.get('pitch_type', 'N/A'),
-                                    'pitch_speed': at_bat.get('release_speed', 'N/A'),
-                                    'pitch_location': f"{at_bat.get('plate_x', 'N/A')}, {at_bat.get('plate_z', 'N/A')}"
-                                })
-                            
-                            tweet = format_tweet(play_data)
-                            client.create_tweet(text=tweet)
-                            logger.info(f"Tweeted: {tweet}")
-                            
-                            processed_at_bats.add(at_bat_id)
-                
-                # Clear memory after processing
-                del recent_at_bats
-                gc.collect()
+                        processed_at_bats.add(at_bat_id)
+                        last_check_status = f"Found at-bat: {at_bat['description']}"
             
-            # Keep the service alive
-            keep_alive()
+            # Clear memory after processing
+            del recent_at_bats
+            gc.collect()
             
-            # Wait 2 minutes before checking again
-            time.sleep(120)
-            
-        except Exception as e:
-            logger.error(f"Error occurred: {str(e)}")
-            time.sleep(120)  # Wait 2 minutes if there's an error
+            if not last_check_status.startswith("Found"):
+                last_check_status = "No new at-bats found"
+        
+        last_check_time = datetime.now()
+        
+    except Exception as e:
+        error_msg = f"Error occurred: {str(e)}"
+        logger.error(error_msg)
+        last_check_status = error_msg
+
+def background_checker():
+    """Background thread to check for Soto's at-bats"""
+    while True:
+        check_soto_at_bats()
+        time.sleep(120)  # Wait 2 minutes between checks
+
+@app.route('/')
+def home():
+    """Render the home page with status information"""
+    global last_check_time, last_check_status
+    
+    if last_check_time is None:
+        status = "Initializing..."
+    else:
+        status = f"Last check: {last_check_time.strftime('%Y-%m-%d %H:%M:%S')} - {last_check_status}"
+    
+    return f"""
+    <html>
+        <head>
+            <title>Juan Soto HR Tracker</title>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    max-width: 800px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    background-color: #f5f5f5;
+                }}
+                .container {{
+                    background-color: white;
+                    padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                }}
+                h1 {{
+                    color: #002D72;
+                    text-align: center;
+                }}
+                .status {{
+                    margin-top: 20px;
+                    padding: 15px;
+                    background-color: #f8f9fa;
+                    border-radius: 5px;
+                    border-left: 5px solid #002D72;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Juan Soto HR Tracker</h1>
+                <div class="status">
+                    <p><strong>Status:</strong> {status}</p>
+                    <p><strong>Mode:</strong> {'TEST' if TEST_MODE else 'PRODUCTION'}</p>
+                </div>
+            </div>
+        </body>
+    </html>
+    """
 
 if __name__ == "__main__":
-    main() 
+    # Start the background checker thread
+    checker_thread = threading.Thread(target=background_checker, daemon=True)
+    checker_thread.start()
+    
+    # Start the Flask app
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port) 
