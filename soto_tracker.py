@@ -2,11 +2,37 @@ import os
 import time
 import logging
 from datetime import datetime
+import struct
+import imghdr
 import tweepy
 from pybaseball import playerid_lookup, batting_stats, statcast_batter
 from dotenv import load_dotenv
 import requests
 import random
+
+# Custom imghdr implementation for Python 3.11+
+def what(file, h=None):
+    if h is None:
+        if isinstance(file, str):
+            f = open(file, 'rb')
+            h = f.read(32)
+            f.close()
+        else:
+            location = file.tell()
+            h = file.read(32)
+            file.seek(location)
+    if h.startswith(b'\xff\xd8'):
+        return 'jpeg'
+    if h.startswith(b'\x89PNG\r\n\x1a\n'):
+        return 'png'
+    if h.startswith(b'GIF87a') or h.startswith(b'GIF89a'):
+        return 'gif'
+    if h.startswith(b'BM'):
+        return 'bmp'
+    return None
+
+# Monkey patch imghdr.what
+imghdr.what = what
 
 # Set up logging
 logging.basicConfig(
