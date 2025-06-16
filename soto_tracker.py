@@ -4,13 +4,13 @@ import logging
 import warnings
 from datetime import datetime
 import tweepy
-from pybaseball import playerid_lookup, batting_stats, statcast_batter
 from dotenv import load_dotenv
 import requests
 import random
 import gc  # For garbage collection
 from flask import Flask, render_template
 import threading
+from pybaseball import playerid_lookup, statcast_batter
 
 # Suppress SyntaxWarnings from tweepy
 warnings.filterwarnings("ignore", category=SyntaxWarning)
@@ -49,9 +49,11 @@ last_check_time = None
 last_check_status = "Initializing..."
 
 def get_soto_id():
-    """Get Juan Soto's MLB ID"""
-    soto_id = playerid_lookup('soto', 'juan')
-    return soto_id['key_mlbam'].iloc[0]
+    """Get Juan Soto's MLB ID using pybaseball"""
+    soto = playerid_lookup('soto', 'juan')
+    if not soto.empty:
+        return soto.iloc[0]['key_mlbam']
+    return None
 
 def get_current_game():
     """Get the current game ID if Soto is playing"""
@@ -59,6 +61,37 @@ def get_current_game():
     params = {
         "sportId": 1,
         "date": datetime.now().strftime("%m/%d/%Y")
+    }
+    response = requests.get(url, params=params)
+    return response.json()
+
+def get_statcast_data(soto_id, date):
+    """Get Statcast data for Soto's at-bats using pybaseball"""
+    try:
+        # Get today's date in YYYY-MM-DD format
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        # Get Statcast data for today
+        data = statcast_batter(today, today, soto_id)
+        
+        if data is not None and not data.empty:
+            return data
+        return None
+    except Exception as e:
+        logger.error(f"Error getting Statcast data: {str(e)}")
+        return None
+
+def get_soto_stats():
+    """Get Soto's stats for the current season"""
+    soto_id = get_soto_id()
+    if not soto_id:
+        return None
+    
+    url = f"https://statsapi.mlb.com/api/v1/people/{soto_id}/stats"
+    params = {
+        "stats": "season",
+        "season": datetime.now().year,
+        "group": "hitting"
     }
     response = requests.get(url, params=params)
     return response.json()
@@ -205,45 +238,49 @@ def check_soto_at_bats():
             game_data = get_current_game()
             
             # Get Soto's recent at-bats
-            recent_at_bats = statcast_batter(
-                start_dt=datetime.now().strftime("%Y-%m-%d"),
-                end_dt=datetime.now().strftime("%Y-%m-%d"),
-                player_id=soto_id
-            )
+            url = f"https://statsapi.mlb.com/api/v1/people/{soto_id}/stats"
+            params = {
+                "stats": "gameLog",
+                "season": datetime.now().year,
+                "group": "hitting"
+            }
+            response = requests.get(url, params=params)
+            recent_at_bats = response.json()
             
-            if recent_at_bats is not None and not recent_at_bats.empty:
-                for _, at_bat in recent_at_bats.iterrows():
-                    at_bat_id = f"{at_bat['game_date']}_{at_bat['inning']}_{at_bat['at_bat_number']}"
-                    
-                    if at_bat_id not in processed_at_bats:
-                        play_data = {
-                            'type': 'home_run' if at_bat['events'] == 'home_run' else 'other',
-                            'description': at_bat['description'],
-                            'exit_velocity': at_bat.get('launch_speed', 'N/A'),
-                            'launch_angle': at_bat.get('launch_angle', 'N/A'),
-                            'distance': at_bat.get('hit_distance_sc', 'N/A'),
-                            'parks': at_bat.get('barrel', 'N/A'),
-                            'hr_number': at_bat.get('home_run', 0)
-                        }
-                        
-                        # Add strikeout data if it's a strikeout
-                        if at_bat['events'] == 'strikeout':
-                            play_data.update({
-                                'strikeout_type': 'looking' if at_bat.get('strikeout_type', '').lower() == 'looking' else 'swinging',
-                                'pitch_type': at_bat.get('pitch_type', 'N/A'),
-                                'pitch_speed': at_bat.get('release_speed', 'N/A'),
-                                'pitch_location': f"{at_bat.get('plate_x', 'N/A')}, {at_bat.get('plate_z', 'N/A')}"
-                            })
-                        
-                        tweet = format_tweet(play_data)
-                        client.create_tweet(text=tweet)
-                        logger.info(f"Tweeted: {tweet}")
-                        
-                        processed_at_bats.add(at_bat_id)
-                        last_check_status = f"Found at-bat: {at_bat['description']}"
+            if recent_at_bats and 'stats' in recent_at_bats:
+                for game in recent_at_bats['stats']:
+                    if game['date'] == datetime.now().strftime("%Y-%m-%d"):
+                        for at_bat in game.get('splits', []):
+                            at_bat_id = f"{game['date']}_{at_bat.get('inning', 1)}_{at_bat.get('atBatIndex', 1)}"
+                            
+                            if at_bat_id not in processed_at_bats:
+                                play_data = {
+                                    'type': 'home_run' if at_bat.get('result', {}).get('event') == 'Home Run' else 'other',
+                                    'description': at_bat.get('result', {}).get('event', 'Unknown'),
+                                    'exit_velocity': at_bat.get('hitData', {}).get('launchSpeed', 'N/A'),
+                                    'launch_angle': at_bat.get('hitData', {}).get('launchAngle', 'N/A'),
+                                    'distance': at_bat.get('hitData', {}).get('totalDistance', 'N/A'),
+                                    'parks': at_bat.get('hitData', {}).get('barrel', 'N/A'),
+                                    'hr_number': at_bat.get('seasonStats', {}).get('homeRuns', 0)
+                                }
+                                
+                                # Add strikeout data if it's a strikeout
+                                if at_bat.get('result', {}).get('event') == 'Strikeout':
+                                    play_data.update({
+                                        'strikeout_type': 'looking' if at_bat.get('result', {}).get('description', '').lower().startswith('called') else 'swinging',
+                                        'pitch_type': at_bat.get('pitchData', {}).get('type', 'N/A'),
+                                        'pitch_speed': at_bat.get('pitchData', {}).get('startSpeed', 'N/A'),
+                                        'pitch_location': f"{at_bat.get('pitchData', {}).get('x', 'N/A')}, {at_bat.get('pitchData', {}).get('z', 'N/A')}"
+                                    })
+                                
+                                tweet = format_tweet(play_data)
+                                client.create_tweet(text=tweet)
+                                logger.info(f"Tweeted: {tweet}")
+                                
+                                processed_at_bats.add(at_bat_id)
+                                last_check_status = f"Found at-bat: {play_data['description']}"
             
             # Clear memory after processing
-            del recent_at_bats
             gc.collect()
             
             if not last_check_status.startswith("Found"):
