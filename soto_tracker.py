@@ -8,6 +8,7 @@ from pybaseball import playerid_lookup, batting_stats, statcast_batter
 from dotenv import load_dotenv
 import requests
 import random
+import gc  # For garbage collection
 
 # Suppress SyntaxWarnings from tweepy
 warnings.filterwarnings("ignore", category=SyntaxWarning)
@@ -229,16 +230,20 @@ def main():
                             logger.info(f"Tweeted: {tweet}")
                             
                             processed_at_bats.add(at_bat_id)
+                
+                # Clear memory after processing
+                del recent_at_bats
+                gc.collect()
             
             # Keep the service alive
             keep_alive()
             
-            # Wait before checking again
-            time.sleep(30)
+            # Wait 2 minutes before checking again
+            time.sleep(120)
             
         except Exception as e:
             logger.error(f"Error occurred: {str(e)}")
-            time.sleep(60)  # Wait longer if there's an error
+            time.sleep(120)  # Wait 2 minutes if there's an error
 
 if __name__ == "__main__":
     main() 
