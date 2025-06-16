@@ -31,7 +31,7 @@ load_dotenv()
 TEST_MODE = False  # Set to False for production - bot will now tweet real at-bats!
 
 # Deployment test flag - sends one test tweet on startup
-DEPLOYMENT_TEST = True  # Set to True to send a test tweet on startup, then set back to False
+DEPLOYMENT_TEST = False  # Set to True to send a test tweet on startup, then set back to False
 
 # Juan Soto's MLB ID (hardcoded to avoid lookup issues)
 SOTO_MLB_ID = 665742
@@ -459,9 +459,9 @@ def check_soto_at_bats():
             
             if recent_at_bats and 'stats' in recent_at_bats:
                 for game in recent_at_bats['stats']:
-                    if game['date'] == datetime.now().strftime("%Y-%m-%d"):
+                    if game.get('date') == datetime.now().strftime("%Y-%m-%d"):
                         for at_bat in game.get('splits', []):
-                            at_bat_id = f"{game['date']}_{at_bat.get('inning', 1)}_{at_bat.get('atBatIndex', 1)}"
+                            at_bat_id = f"{game.get('date', 'unknown')}_{at_bat.get('inning', 1)}_{at_bat.get('atBatIndex', 1)}"
                             
                             if at_bat_id not in processed_at_bats:
                                 logger.info(f"New MLB at-bat found! Processing...")
