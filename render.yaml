@@ -1,9 +1,8 @@
 services:
   - type: web
     name: soto-hr-tracker
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python soto_tracker.py
+    env: docker
+    dockerfilePath: ./Dockerfile
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.8 
