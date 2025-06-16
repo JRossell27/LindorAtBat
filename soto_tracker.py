@@ -28,7 +28,7 @@ app = Flask(__name__)
 load_dotenv()
 
 # Test mode flag
-TEST_MODE = True  # Set to True for now to avoid API calls during startup
+TEST_MODE = False  # Set to False for production - bot will now tweet real at-bats!
 
 # Juan Soto's MLB ID (hardcoded to avoid lookup issues)
 SOTO_MLB_ID = 665742
