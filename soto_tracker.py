@@ -7,8 +7,6 @@ from pybaseball import playerid_lookup, batting_stats, statcast_batter
 from dotenv import load_dotenv
 import requests
 import random
-from PIL import Image
-import io
 
 # Set up logging
 logging.basicConfig(
@@ -54,19 +52,51 @@ def get_current_game():
 def format_tweet(play_data):
     """Format the tweet based on the play data"""
     if play_data['type'] == 'home_run':
+        # Add emojis and formatting for home runs
         tweet = f"🚨 JUAN SOTO HOME RUN! 🚨\n\n"
-        tweet += f"Exit Velocity: {play_data['exit_velocity']} mph\n"
-        tweet += f"Distance: {play_data['distance']} ft\n"
-        tweet += f"Launch Angle: {play_data['launch_angle']}°\n"
-        tweet += f"Parks: {play_data['parks']} parks\n"
-        tweet += f"Season HR #{play_data['hr_number']}"
+        tweet += f"💪 Exit Velocity: {play_data['exit_velocity']} mph\n"
+        tweet += f"📏 Distance: {play_data['distance']} ft\n"
+        tweet += f"📐 Launch Angle: {play_data['launch_angle']}°\n"
+        tweet += f"🏟️ Parks: {play_data['parks']} parks\n"
+        tweet += f"🔢 Season HR #{play_data['hr_number']}\n\n"
+        tweet += f"#JuanSoto #Mets #MLB"
     else:
-        tweet = f"Juan Soto's at-bat result:\n"
-        tweet += f"Result: {play_data['description']}\n"
-        if 'exit_velocity' in play_data:
-            tweet += f"Exit Velocity: {play_data['exit_velocity']} mph\n"
-        if 'launch_angle' in play_data:
-            tweet += f"Launch Angle: {play_data['launch_angle']}°"
+        # Format based on the type of at-bat
+        if play_data['description'].lower() in ['single', 'double', 'triple']:
+            tweet = f"💫 Juan Soto with a {play_data['description'].upper()}!\n\n"
+        elif play_data['description'].lower() == 'walk':
+            tweet = f"👀 Juan Soto draws a WALK!\n\n"
+        elif play_data['description'].lower() == 'strikeout':
+            tweet = f"❌ Juan Soto strikes out"
+            
+            # Add strikeout type if available
+            if 'strikeout_type' in play_data:
+                if play_data['strikeout_type'] == 'looking':
+                    tweet += " looking"
+                elif play_data['strikeout_type'] == 'swinging':
+                    tweet += " swinging"
+            
+            tweet += "\n\n"
+            
+            # Add pitch data if available
+            if 'pitch_type' in play_data and play_data['pitch_type'] != 'N/A':
+                tweet += f"🎯 Final Pitch: {play_data['pitch_type']}\n"
+            if 'pitch_speed' in play_data and play_data['pitch_speed'] != 'N/A':
+                tweet += f"⚡ Speed: {play_data['pitch_speed']} mph\n"
+            if 'pitch_location' in play_data and play_data['pitch_location'] != 'N/A':
+                tweet += f"📍 Location: {play_data['pitch_location']}\n"
+            
+        else:
+            tweet = f"⚾ Juan Soto's at-bat result: {play_data['description']}\n\n"
+        
+        # Add relevant stats if available
+        if 'exit_velocity' in play_data and play_data['exit_velocity'] != 'N/A':
+            tweet += f"💪 Exit Velocity: {play_data['exit_velocity']} mph\n"
+        if 'launch_angle' in play_data and play_data['launch_angle'] != 'N/A':
+            tweet += f"📐 Launch Angle: {play_data['launch_angle']}°\n"
+        
+        tweet += f"\n#JuanSoto #Mets #MLB"
+    
     return tweet
 
 def keep_alive():
@@ -95,15 +125,25 @@ def generate_test_at_bat():
         }
     else:
         outcomes = ['Single', 'Double', 'Triple', 'Strikeout', 'Walk', 'Groundout', 'Flyout']
-        return {
-            'events': random.choice(outcomes).lower(),
-            'description': random.choice(outcomes),
+        outcome = random.choice(outcomes)
+        result = {
+            'events': outcome.lower(),
+            'description': outcome,
             'launch_speed': round(random.uniform(60, 110), 1),
             'launch_angle': round(random.uniform(-10, 45), 1),
             'game_date': datetime.now().strftime("%Y-%m-%d"),
             'inning': random.randint(1, 9),
             'at_bat_number': random.randint(1, 5)
         }
+        
+        # Add strikeout-specific data
+        if outcome == 'Strikeout':
+            result['strikeout_type'] = random.choice(['looking', 'swinging'])
+            result['pitch_type'] = random.choice(['4-Seam Fastball', 'Slider', 'Curveball', 'Changeup', 'Cutter'])
+            result['pitch_speed'] = round(random.uniform(85, 98), 1)
+            result['pitch_location'] = random.choice(['High and Inside', 'Low and Away', 'Middle-In', 'Middle-Out', 'High and Away'])
+        
+        return result
 
 def main():
     soto_id = get_soto_id()
@@ -127,6 +167,15 @@ def main():
                         'parks': test_at_bat.get('barrel', 'N/A'),
                         'hr_number': test_at_bat.get('home_run', 0)
                     }
+                    
+                    # Add strikeout data if it's a strikeout
+                    if test_at_bat['events'] == 'strikeout':
+                        play_data.update({
+                            'strikeout_type': test_at_bat.get('strikeout_type', 'N/A'),
+                            'pitch_type': test_at_bat.get('pitch_type', 'N/A'),
+                            'pitch_speed': test_at_bat.get('pitch_speed', 'N/A'),
+                            'pitch_location': test_at_bat.get('pitch_location', 'N/A')
+                        })
                     
                     tweet = format_tweet(play_data)
                     if TEST_MODE:
@@ -161,6 +210,15 @@ def main():
                                 'parks': at_bat.get('barrel', 'N/A'),
                                 'hr_number': at_bat.get('home_run', 0)
                             }
+                            
+                            # Add strikeout data if it's a strikeout
+                            if at_bat['events'] == 'strikeout':
+                                play_data.update({
+                                    'strikeout_type': 'looking' if at_bat.get('strikeout_type', '').lower() == 'looking' else 'swinging',
+                                    'pitch_type': at_bat.get('pitch_type', 'N/A'),
+                                    'pitch_speed': at_bat.get('release_speed', 'N/A'),
+                                    'pitch_location': f"{at_bat.get('plate_x', 'N/A')}, {at_bat.get('plate_z', 'N/A')}"
+                                })
                             
                             tweet = format_tweet(play_data)
                             client.create_tweet(text=tweet)
