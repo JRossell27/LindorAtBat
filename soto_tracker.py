@@ -30,14 +30,8 @@ load_dotenv()
 # Test mode flag
 TEST_MODE = True  # Set to True for now to avoid API calls during startup
 
-# Try to import pybaseball safely
-try:
-    from pybaseball import playerid_lookup, statcast_batter
-    PYBASEBALL_AVAILABLE = True
-    logger.info("pybaseball imported successfully")
-except Exception as e:
-    PYBASEBALL_AVAILABLE = False
-    logger.error(f"Failed to import pybaseball: {str(e)}")
+# Juan Soto's MLB ID (hardcoded to avoid lookup issues)
+SOTO_MLB_ID = 665742
 
 # Twitter API setup
 if not TEST_MODE:
@@ -61,19 +55,8 @@ last_check_time = None
 last_check_status = "Initializing..."
 
 def get_soto_id():
-    """Get Juan Soto's MLB ID using pybaseball"""
-    if not PYBASEBALL_AVAILABLE:
-        logger.warning("pybaseball not available, using hardcoded Soto ID")
-        return 665742  # Juan Soto's known MLB ID
-    
-    try:
-        soto = playerid_lookup('soto', 'juan')
-        if not soto.empty:
-            return soto.iloc[0]['key_mlbam']
-        return 665742  # Fallback to known ID
-    except Exception as e:
-        logger.error(f"Error looking up Soto ID: {str(e)}")
-        return 665742  # Fallback to known ID
+    """Get Juan Soto's MLB ID (hardcoded for reliability)"""
+    return SOTO_MLB_ID
 
 def get_current_game():
     """Get the current game ID if Soto is playing"""
@@ -84,26 +67,6 @@ def get_current_game():
     }
     response = requests.get(url, params=params)
     return response.json()
-
-def get_statcast_data(soto_id, date):
-    """Get Statcast data for Soto's at-bats using pybaseball"""
-    if not PYBASEBALL_AVAILABLE:
-        logger.warning("pybaseball not available, cannot get Statcast data")
-        return None
-        
-    try:
-        # Get today's date in YYYY-MM-DD format
-        today = datetime.now().strftime('%Y-%m-%d')
-        
-        # Get Statcast data for today
-        data = statcast_batter(today, today, soto_id)
-        
-        if data is not None and not data.empty:
-            return data
-        return None
-    except Exception as e:
-        logger.error(f"Error getting Statcast data: {str(e)}")
-        return None
 
 def get_soto_stats():
     """Get Soto's stats for the current season"""
@@ -379,7 +342,7 @@ def home():
 if __name__ == "__main__":
     logger.info("Starting Juan Soto HR Tracker...")
     logger.info(f"TEST_MODE: {TEST_MODE}")
-    logger.info(f"PYBASEBALL_AVAILABLE: {PYBASEBALL_AVAILABLE}")
+    logger.info(f"SOTO_MLB_ID: {SOTO_MLB_ID}")
     
     # Start the background checker thread
     logger.info("Starting background checker thread...")
