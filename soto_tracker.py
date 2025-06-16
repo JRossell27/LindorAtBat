@@ -10,7 +10,6 @@ import random
 import gc  # For garbage collection
 from flask import Flask, render_template
 import threading
-from pybaseball import playerid_lookup, statcast_batter
 
 # Suppress SyntaxWarnings from tweepy
 warnings.filterwarnings("ignore", category=SyntaxWarning)
@@ -29,17 +28,30 @@ app = Flask(__name__)
 load_dotenv()
 
 # Test mode flag
-TEST_MODE = False  # Set to False for production
+TEST_MODE = True  # Set to True for now to avoid API calls during startup
+
+# Try to import pybaseball safely
+try:
+    from pybaseball import playerid_lookup, statcast_batter
+    PYBASEBALL_AVAILABLE = True
+    logger.info("pybaseball imported successfully")
+except Exception as e:
+    PYBASEBALL_AVAILABLE = False
+    logger.error(f"Failed to import pybaseball: {str(e)}")
 
 # Twitter API setup
 if not TEST_MODE:
-    client = tweepy.Client(
-        consumer_key=os.getenv('TWITTER_API_KEY'),
-        consumer_secret=os.getenv('TWITTER_API_SECRET'),
-        access_token=os.getenv('TWITTER_ACCESS_TOKEN'),
-        access_token_secret=os.getenv('TWITTER_ACCESS_TOKEN_SECRET'),
-        bearer_token=os.getenv('TWITTER_BEARER_TOKEN')
-    )
+    try:
+        client = tweepy.Client(
+            consumer_key=os.getenv('TWITTER_API_KEY'),
+            consumer_secret=os.getenv('TWITTER_API_SECRET'),
+            access_token=os.getenv('TWITTER_ACCESS_TOKEN'),
+            access_token_secret=os.getenv('TWITTER_ACCESS_TOKEN_SECRET'),
+            bearer_token=os.getenv('TWITTER_BEARER_TOKEN')
+        )
+        logger.info("Twitter client initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize Twitter client: {str(e)}")
 
 # Keep track of processed at-bats
 processed_at_bats = set()
@@ -50,10 +62,18 @@ last_check_status = "Initializing..."
 
 def get_soto_id():
     """Get Juan Soto's MLB ID using pybaseball"""
-    soto = playerid_lookup('soto', 'juan')
-    if not soto.empty:
-        return soto.iloc[0]['key_mlbam']
-    return None
+    if not PYBASEBALL_AVAILABLE:
+        logger.warning("pybaseball not available, using hardcoded Soto ID")
+        return 665742  # Juan Soto's known MLB ID
+    
+    try:
+        soto = playerid_lookup('soto', 'juan')
+        if not soto.empty:
+            return soto.iloc[0]['key_mlbam']
+        return 665742  # Fallback to known ID
+    except Exception as e:
+        logger.error(f"Error looking up Soto ID: {str(e)}")
+        return 665742  # Fallback to known ID
 
 def get_current_game():
     """Get the current game ID if Soto is playing"""
@@ -67,6 +87,10 @@ def get_current_game():
 
 def get_statcast_data(soto_id, date):
     """Get Statcast data for Soto's at-bats using pybaseball"""
+    if not PYBASEBALL_AVAILABLE:
+        logger.warning("pybaseball not available, cannot get Statcast data")
+        return None
+        
     try:
         # Get today's date in YYYY-MM-DD format
         today = datetime.now().strftime('%Y-%m-%d')
@@ -353,10 +377,17 @@ def home():
     """
 
 if __name__ == "__main__":
+    logger.info("Starting Juan Soto HR Tracker...")
+    logger.info(f"TEST_MODE: {TEST_MODE}")
+    logger.info(f"PYBASEBALL_AVAILABLE: {PYBASEBALL_AVAILABLE}")
+    
     # Start the background checker thread
+    logger.info("Starting background checker thread...")
     checker_thread = threading.Thread(target=background_checker, daemon=True)
     checker_thread.start()
+    logger.info("Background checker thread started")
     
     # Start the Flask app
     port = int(os.environ.get('PORT', 5000))
+    logger.info(f"Starting Flask app on port {port}...")
     app.run(host='0.0.0.0', port=port) 
