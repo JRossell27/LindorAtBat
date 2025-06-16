@@ -30,6 +30,9 @@ load_dotenv()
 # Test mode flag
 TEST_MODE = False  # Set to False for production - bot will now tweet real at-bats!
 
+# Deployment test flag - sends one test tweet on startup
+DEPLOYMENT_TEST = True  # Set to True to send a test tweet on startup, then set back to False
+
 # Juan Soto's MLB ID (hardcoded to avoid lookup issues)
 SOTO_MLB_ID = 665742
 
@@ -292,6 +295,33 @@ def keep_alive():
     except:
         pass
 
+def send_deployment_test_tweet():
+    """Send a one-time test tweet on deployment"""
+    try:
+        test_tweet = f"""🚀 Juan Soto Bot - Deployment Test
+
+✅ Bot successfully deployed and running!
+📅 Deployed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC
+⚾ Ready to track Juan Soto's at-bats!
+
+🤖 This is an automated deployment test
+🗑️ Will be manually deleted
+
+#JuanSoto #Mets #MLB #DeploymentTest"""
+        
+        if not TEST_MODE:
+            response = client.create_tweet(text=test_tweet)
+            logger.info(f"🚀 DEPLOYMENT TEST TWEET SENT! Tweet ID: {response.data['id']}")
+            logger.info(f"Tweet URL: https://twitter.com/user/status/{response.data['id']}")
+            return True
+        else:
+            logger.info(f"TEST MODE - Would send deployment test tweet: {test_tweet}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Failed to send deployment test tweet: {str(e)}")
+        return False
+
 def generate_test_at_bat():
     """Generate a test at-bat with enhanced random data"""
     is_home_run = random.random() < 0.25  # 25% chance of home run
@@ -550,7 +580,18 @@ def home():
 if __name__ == "__main__":
     logger.info("Starting Juan Soto HR Tracker...")
     logger.info(f"TEST_MODE: {TEST_MODE}")
+    logger.info(f"DEPLOYMENT_TEST: {DEPLOYMENT_TEST}")
     logger.info(f"SOTO_MLB_ID: {SOTO_MLB_ID}")
+    
+    # Send deployment test tweet if enabled
+    if DEPLOYMENT_TEST and not TEST_MODE:
+        logger.info("🚀 Sending deployment test tweet...")
+        if send_deployment_test_tweet():
+            logger.info("✅ Deployment test tweet sent successfully!")
+        else:
+            logger.error("❌ Failed to send deployment test tweet")
+    elif DEPLOYMENT_TEST and TEST_MODE:
+        logger.info("⚠️ DEPLOYMENT_TEST enabled but in TEST_MODE - no tweet will be sent")
     
     # Start the background checker thread
     logger.info("Starting background checker thread...")
