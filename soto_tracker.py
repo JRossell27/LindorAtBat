@@ -2,37 +2,13 @@ import os
 import time
 import logging
 from datetime import datetime
-import struct
-import imghdr
 import tweepy
 from pybaseball import playerid_lookup, batting_stats, statcast_batter
 from dotenv import load_dotenv
 import requests
 import random
-
-# Custom imghdr implementation for Python 3.11+
-def what(file, h=None):
-    if h is None:
-        if isinstance(file, str):
-            f = open(file, 'rb')
-            h = f.read(32)
-            f.close()
-        else:
-            location = file.tell()
-            h = file.read(32)
-            file.seek(location)
-    if h.startswith(b'\xff\xd8'):
-        return 'jpeg'
-    if h.startswith(b'\x89PNG\r\n\x1a\n'):
-        return 'png'
-    if h.startswith(b'GIF87a') or h.startswith(b'GIF89a'):
-        return 'gif'
-    if h.startswith(b'BM'):
-        return 'bmp'
-    return None
-
-# Monkey patch imghdr.what
-imghdr.what = what
+from PIL import Image
+import io
 
 # Set up logging
 logging.basicConfig(
@@ -67,8 +43,6 @@ def get_soto_id():
 
 def get_current_game():
     """Get the current game ID if Soto is playing"""
-    # This is a simplified version - you might want to enhance this
-    # to check if the Mets are playing and if Soto is in the lineup
     url = "https://statsapi.mlb.com/api/v1/schedule"
     params = {
         "sportId": 1,
