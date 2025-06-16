@@ -352,13 +352,18 @@ def check_soto_at_bats():
     
     try:
         soto_id = get_soto_id()
+        logger.info("Checking for Soto at-bats...")
         
         if TEST_MODE:
             # Generate test at-bat with enhanced data
             test_at_bat = generate_test_at_bat()
             at_bat_id = f"{test_at_bat['game_date']}_{test_at_bat['inning']}_{test_at_bat['at_bat_number']}"
             
+            logger.info(f"Generated test at-bat: {test_at_bat['description']} (ID: {at_bat_id})")
+            
             if at_bat_id not in processed_at_bats:
+                logger.info(f"New at-bat found! Processing: {test_at_bat['description']}")
+                
                 play_data = {
                     'type': 'home_run' if test_at_bat['events'] == 'home_run' else 'other',
                     'description': test_at_bat['description'],
@@ -392,6 +397,10 @@ def check_soto_at_bats():
                 
                 processed_at_bats.add(at_bat_id)
                 last_check_status = f"Found test at-bat: {test_at_bat['description']} {test_at_bat.get('situation', '')}"
+                logger.info(f"At-bat processed and added to cache. Total processed: {len(processed_at_bats)}")
+            else:
+                logger.info(f"At-bat already processed (ID: {at_bat_id}). Skipping...")
+                last_check_status = f"Duplicate at-bat skipped: {test_at_bat['description']}"
         else:
             # Get current game data
             game_data = get_current_game()
@@ -416,6 +425,8 @@ def check_soto_at_bats():
             live_response = requests.get(live_game_url, params=live_params)
             live_data = live_response.json()
             
+            logger.info("Checking MLB API for recent at-bats...")
+            
             if recent_at_bats and 'stats' in recent_at_bats:
                 for game in recent_at_bats['stats']:
                     if game['date'] == datetime.now().strftime("%Y-%m-%d"):
@@ -423,6 +434,8 @@ def check_soto_at_bats():
                             at_bat_id = f"{game['date']}_{at_bat.get('inning', 1)}_{at_bat.get('atBatIndex', 1)}"
                             
                             if at_bat_id not in processed_at_bats:
+                                logger.info(f"New MLB at-bat found! Processing...")
+                                
                                 # Enhanced play data extraction
                                 result_event = at_bat.get('result', {}).get('event', 'Unknown')
                                 hit_data = at_bat.get('hitData', {})
@@ -456,14 +469,19 @@ def check_soto_at_bats():
                                 
                                 processed_at_bats.add(at_bat_id)
                                 last_check_status = f"Found at-bat: {result_event} {play_data.get('situation', '')}"
+                                logger.info(f"MLB at-bat processed and tweeted. Total processed: {len(processed_at_bats)}")
+                            else:
+                                logger.info(f"MLB at-bat already processed (ID: {at_bat_id}). Skipping...")
             
             # Clear memory after processing
             gc.collect()
             
-            if not last_check_status.startswith("Found"):
+            if not last_check_status.startswith("Found") and not last_check_status.startswith("Duplicate"):
                 last_check_status = "No new at-bats found"
+                logger.info("No new at-bats found in MLB API")
         
         last_check_time = datetime.now()
+        logger.info(f"Check completed. Status: {last_check_status}")
         
     except Exception as e:
         error_msg = f"Error occurred: {str(e)}"
