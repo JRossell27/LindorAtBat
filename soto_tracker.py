@@ -1,12 +1,22 @@
 import os
 import time
 import logging
+import warnings
 from datetime import datetime
 import tweepy
 from pybaseball import playerid_lookup, batting_stats, statcast_batter
 from dotenv import load_dotenv
 import requests
 import random
+
+# Configure matplotlib to not build font cache
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+matplotlib.rcParams['font.cache_dir'] = '/tmp'  # Use temporary directory
+matplotlib.rcParams['font.family'] = 'sans-serif'  # Use basic font family
+
+# Suppress SyntaxWarnings from tweepy
+warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 # Set up logging
 logging.basicConfig(
