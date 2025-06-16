@@ -12,7 +12,7 @@ import random
 # Configure matplotlib to not build font cache
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
-matplotlib.rcParams['font.cache_dir'] = '/tmp'  # Use temporary directory
+os.environ['MPLCONFIGDIR'] = '/tmp'  # Use temporary directory for matplotlib config
 matplotlib.rcParams['font.family'] = 'sans-serif'  # Use basic font family
 
 # Suppress SyntaxWarnings from tweepy
