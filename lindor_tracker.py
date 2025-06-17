@@ -521,9 +521,19 @@ def check_lindor_at_bats():
         last_check_status = error_msg
 
 def background_checker():
-    """Background thread to check for Lindor's at-bats"""
+    """Background thread to check for Lindor's at-bats and keep service alive"""
+    ping_counter = 0
     while True:
+        # Check for at-bats
         check_lindor_at_bats()
+        
+        # Send keep-alive ping every 6 minutes (3 cycles of 2 minutes each)
+        # This ensures we ping well before Render's 15-minute timeout
+        ping_counter += 1
+        if ping_counter >= 3:
+            keep_alive()
+            ping_counter = 0
+        
         time.sleep(120)  # Wait 2 minutes between checks
 
 @app.route('/')
