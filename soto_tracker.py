@@ -201,7 +201,7 @@ def format_tweet(play_data):
         if play_data.get('situation'):
             tweet += f"⚾ {play_data['situation']}\n"
         
-        tweet += f"\n#JuanSoto #Mets #MLB #HomeRun"
+        tweet += f"\n#LGM"
         
     elif play_data['description'].lower() in ['single', 'double', 'triple']:
         # Enhanced hit tweet
@@ -227,7 +227,7 @@ def format_tweet(play_data):
             tweet += f"\n📊 Season: .{season_stats.get('avg', '000')} AVG, {season_stats.get('ops', 'N/A')} OPS\n"
             tweet += f"🏃 {season_stats.get('hits', 0) + 1} hits, {season_stats.get('rbi', 0)} RBI\n"
         
-        tweet += f"\n#JuanSoto #Mets #MLB"
+        tweet += f"\n#LGM"
         
     elif play_data['description'].lower() == 'walk':
         tweet = f"👁️ Juan Soto draws a WALK!\n\n"
@@ -243,7 +243,7 @@ def format_tweet(play_data):
         if play_data.get('situation'):
             tweet += f"⚾ {play_data['situation']}\n"
         
-        tweet += f"\n#JuanSoto #Mets #MLB #PatientHitter"
+        tweet += f"\n#LGM"
         
     elif play_data['description'].lower() == 'strikeout':
         tweet = f"❌ Juan Soto strikes out"
@@ -268,7 +268,7 @@ def format_tweet(play_data):
             tweet += f"\n📊 Season K Rate: {k_rate}%\n"
             tweet += f"⚾ {season_stats.get('strikeouts', 0) + 1} K, {season_stats.get('walks', 0)} BB\n"
         
-        tweet += f"\n#JuanSoto #Mets #MLB"
+        tweet += f"\n#LGM"
         
     else:
         # Generic at-bat with enhanced context
@@ -284,7 +284,7 @@ def format_tweet(play_data):
         if season_stats:
             tweet += f"\n📊 Season: .{season_stats.get('avg', '000')}/{season_stats.get('obp', '.000')}/{season_stats.get('slg', '.000')}\n"
         
-        tweet += f"\n#JuanSoto #Mets #MLB"
+        tweet += f"\n#LGM"
     
     return tweet
 
@@ -307,7 +307,7 @@ def send_deployment_test_tweet():
 🤖 This is an automated deployment test
 🗑️ Will be manually deleted
 
-#JuanSoto #Mets #MLB #DeploymentTest"""
+#LGM"""
         
         if not TEST_MODE:
             response = client.create_tweet(text=test_tweet)
