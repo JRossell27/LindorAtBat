@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "soto_tracker.py"] 
+CMD ["python", "alonso_tracker.py"] 

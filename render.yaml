@@ -1,11 +1,10 @@
 services:
   - type: web
-    name: soto-hr-tracker
-    env: docker
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
+    name: alonso-at-bat-tracker
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python alonso_tracker.py
     envVars:
-      - key: PYTHONUNBUFFERED
-        value: "1"
-      - key: PYTHONDONTWRITEBYTECODE
-        value: "1" 
+      - key: PYTHON_VERSION
+        value: 3.11.4 

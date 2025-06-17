@@ -1,6 +1,6 @@
-# Juan Soto HR Tracker
+# Pete Alonso At-Bat Tracker
 
-This bot tracks Juan Soto's at-bats and tweets the results, including detailed information about home runs and other outcomes.
+This bot tracks Pete Alonso's at-bats and tweets the results, including detailed information about home runs and other outcomes.
 
 ## Setup
 
@@ -21,7 +21,7 @@ This bot tracks Juan Soto's at-bats and tweets the results, including detailed i
 ## Running Locally
 
 ```bash
-python soto_tracker.py
+python alonso_tracker.py
 ```
 
 ## Deployment
@@ -30,7 +30,7 @@ This bot is designed to run on Render.com. The free tier will spin down with ina
 
 ## Features
 
-- Tracks all of Juan Soto's at-bats
+- Tracks all of Pete Alonso's at-bats
 - Tweets detailed information about each at-bat
 - For home runs: includes exit velocity, distance, launch angle, and number of parks it would have been a home run in
 - For other outcomes: includes the result and relevant statistics 
