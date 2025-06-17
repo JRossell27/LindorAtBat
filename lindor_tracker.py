@@ -33,8 +33,8 @@ TEST_MODE = False  # Set to False for production - bot will now tweet real at-ba
 # Deployment test flag - sends one test tweet on startup
 DEPLOYMENT_TEST = False  # Set to True to send a test tweet on startup, then set back to False
 
-# Pete Alonso's MLB ID (hardcoded to avoid lookup issues)
-ALONSO_MLB_ID = 624413
+# Francisco Lindor's MLB ID (hardcoded to avoid lookup issues)
+LINDOR_MLB_ID = 32129
 
 # Twitter API setup
 if not TEST_MODE:
@@ -61,12 +61,12 @@ last_check_status = "Initializing..."
 season_stats_cache = {}
 cache_timestamp = None
 
-def get_alonso_id():
-    """Get Pete Alonso's MLB ID (hardcoded for reliability)"""
-    return ALONSO_MLB_ID
+def get_lindor_id():
+    """Get Francisco Lindor's MLB ID (hardcoded for reliability)"""
+    return LINDOR_MLB_ID
 
 def get_current_game():
-    """Get the current game ID if Alonso is playing"""
+    """Get the current game ID if Lindor is playing"""
     url = "https://statsapi.mlb.com/api/v1/schedule"
     params = {
         "sportId": 1,
@@ -75,21 +75,21 @@ def get_current_game():
     response = requests.get(url, params=params)
     return response.json()
 
-def get_alonso_season_stats():
-    """Get Alonso's comprehensive season stats with caching"""
+def get_lindor_season_stats():
+    """Get Lindor's comprehensive season stats with caching"""
     global season_stats_cache, cache_timestamp
     
     # Check if cache is still valid (refresh every 10 minutes)
     if cache_timestamp and (datetime.now() - cache_timestamp).seconds < 600:
         return season_stats_cache
     
-    alonso_id = get_alonso_id()
-    if not alonso_id:
+    lindor_id = get_lindor_id()
+    if not lindor_id:
         return None
     
     try:
         # Get hitting stats
-        url = f"https://statsapi.mlb.com/api/v1/people/{alonso_id}/stats"
+        url = f"https://statsapi.mlb.com/api/v1/people/{lindor_id}/stats"
         params = {
             "stats": "season",
             "season": datetime.now().year,
@@ -174,11 +174,11 @@ def calculate_ops(avg, obp, slg):
 
 def format_tweet(play_data):
     """Format the tweet based on the play data with enhanced stats"""
-    season_stats = get_alonso_season_stats()
+    season_stats = get_lindor_season_stats()
     
     if play_data['type'] == 'home_run':
         # Enhanced home run tweet
-        tweet = f"🚨 Pete Alonso GOES YARD! 🚨\n\n"
+        tweet = f"🚨 Francisco Lindor GOES YARD! 🚨\n\n"
         tweet += f"💥 Exit Velocity: {play_data['exit_velocity']} mph\n"
         tweet += f"📏 Distance: {play_data['distance']} ft\n"
         tweet += f"📐 Launch Angle: {play_data['launch_angle']}°\n"
@@ -208,7 +208,7 @@ def format_tweet(play_data):
         hit_type = play_data['description'].upper()
         emoji = "💫" if hit_type == "SINGLE" else "⚡" if hit_type == "DOUBLE" else "🔥"
         
-        tweet = f"{emoji} Pete Alonso with a {hit_type}!\n\n"
+        tweet = f"{emoji} Francisco Lindor with a {hit_type}!\n\n"
         
         # Hit data
         if play_data.get('exit_velocity') != 'N/A':
@@ -230,7 +230,7 @@ def format_tweet(play_data):
         tweet += f"\n#LGM"
         
     elif play_data['description'].lower() == 'walk':
-        tweet = f"👁️ Pete Alonso draws a WALK!\n\n"
+        tweet = f"👁️ Francisco Lindor draws a WALK!\n\n"
         
         # Plate discipline stats
         if season_stats:
@@ -246,7 +246,7 @@ def format_tweet(play_data):
         tweet += f"\n#LGM"
         
     elif play_data['description'].lower() == 'strikeout':
-        tweet = f"❌ Pete Alonso strikes out"
+        tweet = f"❌ Francisco Lindor strikes out"
         
         # Add strikeout type
         if play_data.get('strikeout_type') != 'N/A':
@@ -272,7 +272,7 @@ def format_tweet(play_data):
         
     else:
         # Generic at-bat with enhanced context
-        tweet = f"⚾ Pete Alonso: {play_data['description']}\n\n"
+        tweet = f"⚾ Francisco Lindor: {play_data['description']}\n\n"
         
         # Add relevant stats if available
         if play_data.get('exit_velocity') != 'N/A':
@@ -289,20 +289,22 @@ def format_tweet(play_data):
     return tweet
 
 def keep_alive():
-    """Send a request to keep the service alive"""
+    """Keep the server alive by self-pinging"""
     try:
-        requests.get("https://alonso-at-bat-tracker.onrender.com/")
-    except:
-        pass
+        # Update URL to match the new service name
+        requests.get("https://lindor-at-bat-tracker.onrender.com/")
+        logger.info("Keep-alive ping sent successfully")
+    except Exception as e:
+        logger.error(f"Keep-alive ping failed: {str(e)}")
 
 def send_deployment_test_tweet():
     """Send a one-time test tweet on deployment"""
     try:
-        test_tweet = f"""🚀 Pete Alonso Bot - Deployment Test
+        test_tweet = f"""🚀 Francisco Lindor Bot - Deployment Test
 
 ✅ Bot successfully deployed and running!
 📅 Deployed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC
-⚾ Ready to track Pete Alonso's at-bats!
+⚾ Ready to track Francisco Lindor's at-bats!
 
 🤖 This is an automated deployment test
 🗑️ Will be manually deleted
@@ -376,13 +378,13 @@ def generate_test_at_bat():
         
         return result
 
-def check_alonso_at_bats():
-    """Check for Alonso's at-bats and tweet if found"""
+def check_lindor_at_bats():
+    """Check for Lindor's at-bats and tweet if found"""
     global last_check_time, last_check_status
     
     try:
-        alonso_id = get_alonso_id()
-        logger.info("Checking for Alonso at-bats...")
+        lindor_id = get_lindor_id()
+        logger.info("Checking for Lindor at-bats...")
         
         if TEST_MODE:
             # Generate test at-bat with enhanced data
@@ -435,8 +437,8 @@ def check_alonso_at_bats():
             # Get current game data
             game_data = get_current_game()
             
-            # Get Alonso's recent at-bats with enhanced data
-            url = f"https://statsapi.mlb.com/api/v1/people/{alonso_id}/stats"
+            # Get Lindor's recent at-bats with enhanced data
+            url = f"https://statsapi.mlb.com/api/v1/people/{lindor_id}/stats"
             params = {
                 "stats": "gameLog",
                 "season": datetime.now().year,
@@ -519,9 +521,9 @@ def check_alonso_at_bats():
         last_check_status = error_msg
 
 def background_checker():
-    """Background thread to check for Alonso's at-bats"""
+    """Background thread to check for Lindor's at-bats"""
     while True:
-        check_alonso_at_bats()
+        check_lindor_at_bats()
         time.sleep(120)  # Wait 2 minutes between checks
 
 @app.route('/')
@@ -537,7 +539,7 @@ def home():
     return f"""
     <html>
         <head>
-            <title>Pete Alonso HR Tracker</title>
+            <title>Francisco Lindor HR Tracker</title>
             <style>
                 body {{
                     font-family: Arial, sans-serif;
@@ -567,7 +569,7 @@ def home():
         </head>
         <body>
             <div class="container">
-                <h1>Pete Alonso HR Tracker</h1>
+                <h1>Francisco Lindor HR Tracker</h1>
                 <div class="status">
                     <p><strong>Status:</strong> {status}</p>
                     <p><strong>Mode:</strong> {'TEST' if TEST_MODE else 'PRODUCTION'}</p>
@@ -578,10 +580,10 @@ def home():
     """
 
 if __name__ == "__main__":
-    logger.info("Starting Pete Alonso HR Tracker...")
+    logger.info("Starting Francisco Lindor HR Tracker...")
     logger.info(f"TEST_MODE: {TEST_MODE}")
     logger.info(f"DEPLOYMENT_TEST: {DEPLOYMENT_TEST}")
-    logger.info(f"ALONSO_MLB_ID: {ALONSO_MLB_ID}")
+    logger.info(f"LINDOR_MLB_ID: {LINDOR_MLB_ID}")
     
     # Send deployment test tweet if enabled
     if DEPLOYMENT_TEST and not TEST_MODE:
