@@ -10,22 +10,35 @@ import random
 import gc  # For garbage collection
 from flask import Flask, render_template
 import threading
+import sys
 
 # Suppress SyntaxWarnings from tweepy
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
-# Set up logging
+# Set up logging with more verbose configuration for Render
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()  # Ensure logs go to stdout for Render
+    ]
 )
 logger = logging.getLogger(__name__)
+
+# Log startup immediately
+logger.info("🚀 Francisco Lindor Tracker starting up...")
+logger.info(f"Python version: {sys.version}")
+logger.info(f"Current working directory: {os.getcwd()}")
 
 # Initialize Flask app
 app = Flask(__name__)
 
 # Load environment variables
 load_dotenv()
+
+# Log environment status
+logger.info("📋 Environment variables loaded")
+logger.info(f"PORT environment variable: {os.environ.get('PORT', 'Not set')}")
 
 # Test mode flag
 TEST_MODE = False  # Set to False for production - bot will now tweet real at-bats!
@@ -36,9 +49,21 @@ DEPLOYMENT_TEST = False  # Set to True to send a test tweet on startup, then set
 # Francisco Lindor's MLB ID (hardcoded to avoid lookup issues)
 LINDOR_MLB_ID = 32129
 
+logger.info(f"🎯 Configuration loaded - TEST_MODE: {TEST_MODE}, DEPLOYMENT_TEST: {DEPLOYMENT_TEST}")
+logger.info(f"⚾ Tracking Francisco Lindor (ID: {LINDOR_MLB_ID})")
+
 # Twitter API setup
 if not TEST_MODE:
     try:
+        # Check if environment variables exist
+        required_vars = ['TWITTER_API_KEY', 'TWITTER_API_SECRET', 'TWITTER_ACCESS_TOKEN', 'TWITTER_ACCESS_TOKEN_SECRET', 'TWITTER_BEARER_TOKEN']
+        missing_vars = [var for var in required_vars if not os.getenv(var)]
+        
+        if missing_vars:
+            logger.error(f"❌ Missing Twitter environment variables: {missing_vars}")
+        else:
+            logger.info("✅ All Twitter environment variables found")
+        
         client = tweepy.Client(
             consumer_key=os.getenv('TWITTER_API_KEY'),
             consumer_secret=os.getenv('TWITTER_API_SECRET'),
@@ -46,9 +71,12 @@ if not TEST_MODE:
             access_token_secret=os.getenv('TWITTER_ACCESS_TOKEN_SECRET'),
             bearer_token=os.getenv('TWITTER_BEARER_TOKEN')
         )
-        logger.info("Twitter client initialized successfully")
+        logger.info("✅ Twitter client initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize Twitter client: {str(e)}")
+        logger.error(f"❌ Failed to initialize Twitter client: {str(e)}")
+        logger.error(f"Exception type: {type(e).__name__}")
+else:
+    logger.info("🧪 Running in TEST_MODE - Twitter client not initialized")
 
 # Keep track of processed at-bats
 processed_at_bats = set()
@@ -292,10 +320,17 @@ def keep_alive():
     """Keep the server alive by self-pinging"""
     try:
         # Update URL to match the new service name
-        requests.get("https://lindor-at-bat-tracker.onrender.com/")
-        logger.info("Keep-alive ping sent successfully")
+        url = "https://lindor-at-bat-tracker.onrender.com/"
+        logger.info(f"🏓 Sending keep-alive ping to {url}")
+        response = requests.get(url, timeout=30)
+        logger.info(f"✅ Keep-alive ping successful - Status: {response.status_code}")
+    except requests.exceptions.Timeout:
+        logger.error("⏰ Keep-alive ping timed out after 30 seconds")
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"🔌 Keep-alive ping connection error: {str(e)}")
     except Exception as e:
-        logger.error(f"Keep-alive ping failed: {str(e)}")
+        logger.error(f"❌ Keep-alive ping failed: {str(e)}")
+        logger.error(f"Exception type: {type(e).__name__}")
 
 def send_deployment_test_tweet():
     """Send a one-time test tweet on deployment"""
@@ -522,24 +557,43 @@ def check_lindor_at_bats():
 
 def background_checker():
     """Background thread to check for Lindor's at-bats and keep service alive"""
+    logger.info("🔄 Background checker thread started")
     ping_counter = 0
+    cycle_count = 0
+    
     while True:
-        # Check for at-bats
-        check_lindor_at_bats()
-        
-        # Send keep-alive ping every 6 minutes (3 cycles of 2 minutes each)
-        # This ensures we ping well before Render's 15-minute timeout
-        ping_counter += 1
-        if ping_counter >= 3:
-            keep_alive()
-            ping_counter = 0
-        
-        time.sleep(120)  # Wait 2 minutes between checks
+        try:
+            cycle_count += 1
+            logger.info(f"🔍 Starting check cycle #{cycle_count}")
+            
+            # Check for at-bats
+            check_lindor_at_bats()
+            
+            # Send keep-alive ping every 6 minutes (3 cycles of 2 minutes each)
+            # This ensures we ping well before Render's 15-minute timeout
+            ping_counter += 1
+            logger.info(f"📊 Ping counter: {ping_counter}/3")
+            
+            if ping_counter >= 3:
+                logger.info("🏓 Time for keep-alive ping")
+                keep_alive()
+                ping_counter = 0
+            
+            logger.info(f"😴 Sleeping for 2 minutes until next check...")
+            time.sleep(120)  # Wait 2 minutes between checks
+            
+        except Exception as e:
+            logger.error(f"❌ Error in background checker: {str(e)}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            logger.info("🔄 Continuing background checker despite error...")
+            time.sleep(120)  # Still wait before retrying
 
 @app.route('/')
 def home():
     """Render the home page with status information"""
     global last_check_time, last_check_status
+    
+    logger.info("📱 Home page accessed")
     
     if last_check_time is None:
         status = "Initializing..."
@@ -583,17 +637,37 @@ def home():
                 <div class="status">
                     <p><strong>Status:</strong> {status}</p>
                     <p><strong>Mode:</strong> {'TEST' if TEST_MODE else 'PRODUCTION'}</p>
+                    <p><strong>Processed At-Bats:</strong> {len(processed_at_bats)}</p>
+                    <p><strong>Uptime:</strong> Service is running</p>
+                </div>
+                <div style="margin-top: 20px;">
+                    <a href="/health" style="color: #002D72;">Health Check</a>
                 </div>
             </div>
         </body>
     </html>
     """
 
+@app.route('/health')
+def health_check():
+    """Simple health check endpoint"""
+    logger.info("🏥 Health check accessed")
+    return {
+        "status": "healthy",
+        "service": "Francisco Lindor HR Tracker",
+        "timestamp": datetime.now().isoformat(),
+        "test_mode": TEST_MODE,
+        "processed_at_bats": len(processed_at_bats),
+        "last_check": last_check_time.isoformat() if last_check_time else None,
+        "last_status": last_check_status
+    }
+
 if __name__ == "__main__":
-    logger.info("Starting Francisco Lindor HR Tracker...")
-    logger.info(f"TEST_MODE: {TEST_MODE}")
-    logger.info(f"DEPLOYMENT_TEST: {DEPLOYMENT_TEST}")
-    logger.info(f"LINDOR_MLB_ID: {LINDOR_MLB_ID}")
+    logger.info("🚀 Starting Francisco Lindor HR Tracker...")
+    logger.info(f"🎯 TEST_MODE: {TEST_MODE}")
+    logger.info(f"🧪 DEPLOYMENT_TEST: {DEPLOYMENT_TEST}")
+    logger.info(f"⚾ LINDOR_MLB_ID: {LINDOR_MLB_ID}")
+    logger.info(f"🌍 Environment: {'Render' if os.environ.get('RENDER') else 'Local'}")
     
     # Send deployment test tweet if enabled
     if DEPLOYMENT_TEST and not TEST_MODE:
@@ -604,14 +678,27 @@ if __name__ == "__main__":
             logger.error("❌ Failed to send deployment test tweet")
     elif DEPLOYMENT_TEST and TEST_MODE:
         logger.info("⚠️ DEPLOYMENT_TEST enabled but in TEST_MODE - no tweet will be sent")
+    else:
+        logger.info("ℹ️ DEPLOYMENT_TEST disabled - no test tweet will be sent")
     
     # Start the background checker thread
-    logger.info("Starting background checker thread...")
-    checker_thread = threading.Thread(target=background_checker, daemon=True)
-    checker_thread.start()
-    logger.info("Background checker thread started")
+    logger.info("🔄 Starting background checker thread...")
+    try:
+        checker_thread = threading.Thread(target=background_checker, daemon=True)
+        checker_thread.start()
+        logger.info("✅ Background checker thread started successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to start background checker thread: {str(e)}")
+        logger.error(f"Exception type: {type(e).__name__}")
     
     # Start the Flask app
     port = int(os.environ.get('PORT', 5000))
-    logger.info(f"Starting Flask app on port {port}...")
-    app.run(host='0.0.0.0', port=port) 
+    logger.info(f"🌐 Starting Flask app on host=0.0.0.0, port={port}...")
+    logger.info(f"🔗 Service will be available at: https://lindor-at-bat-tracker.onrender.com/")
+    
+    try:
+        app.run(host='0.0.0.0', port=port, debug=False)
+    except Exception as e:
+        logger.error(f"❌ Flask app failed to start: {str(e)}")
+        logger.error(f"Exception type: {type(e).__name__}")
+        raise 
