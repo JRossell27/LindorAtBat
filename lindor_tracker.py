@@ -2,7 +2,7 @@ import os
 import time
 import logging
 import warnings
-from datetime import datetime
+from datetime import datetime, timezone
 import tweepy
 from dotenv import load_dotenv
 import requests
@@ -11,6 +11,7 @@ import gc  # For garbage collection
 from flask import Flask, render_template
 import threading
 import sys
+import pytz
 
 # Suppress SyntaxWarnings from tweepy
 warnings.filterwarnings("ignore", category=SyntaxWarning)
@@ -421,6 +422,17 @@ def check_lindor_at_bats():
         lindor_id = get_lindor_id()
         logger.info("Checking for Lindor at-bats...")
         
+        # Add comprehensive time/date logging
+        utc_now = datetime.now(timezone.utc)
+        et_now = utc_now.astimezone(pytz.timezone('US/Eastern'))
+        
+        logger.info(f"🕐 Current UTC time: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        logger.info(f"🕐 Current ET time: {et_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        
+        # Use Eastern Time for MLB games
+        today_et = et_now.strftime("%Y-%m-%d")
+        logger.info(f"🗓️ Using date for MLB lookup: {today_et}")
+        
         if TEST_MODE:
             # Generate test at-bat with enhanced data
             test_at_bat = generate_test_at_bat()
@@ -469,83 +481,161 @@ def check_lindor_at_bats():
                 logger.info(f"At-bat already processed (ID: {at_bat_id}). Skipping...")
                 last_check_status = f"Duplicate at-bat skipped: {test_at_bat['description']}"
         else:
-            # Get current game data
-            game_data = get_current_game()
+            # Check today's games first
+            logger.info(f"🗓️ Checking for Mets games on {today_et}")
+            
+            # Get today's schedule to see if Mets are playing
+            schedule_url = "https://statsapi.mlb.com/api/v1/schedule"
+            schedule_params = {
+                "sportId": 1,
+                "date": today_et,
+                "teamId": 121  # New York Mets team ID
+            }
+            
+            try:
+                schedule_response = requests.get(schedule_url, params=schedule_params)
+                schedule_data = schedule_response.json()
+                logger.info(f"📋 Schedule API response: {schedule_data}")
+                
+                if schedule_data.get('dates') and len(schedule_data['dates']) > 0:
+                    games_today = schedule_data['dates'][0].get('games', [])
+                    logger.info(f"🎮 Found {len(games_today)} Mets games today")
+                    
+                    for game in games_today:
+                        game_state = game.get('status', {}).get('detailedState', 'Unknown')
+                        game_time = game.get('gameDate', 'Unknown')
+                        home_team = game.get('teams', {}).get('home', {}).get('team', {}).get('name', 'Unknown')
+                        away_team = game.get('teams', {}).get('away', {}).get('team', {}).get('name', 'Unknown')
+                        
+                        logger.info(f"🏟️ Game: {away_team} @ {home_team}")
+                        logger.info(f"🕐 Game time: {game_time}")
+                        logger.info(f"🎯 Game status: {game_state}")
+                        
+                        # If there's a game today, get more detailed info
+                        if game_state in ['Preview', 'Pre-Game', 'Warmup', 'In Progress', 'Final', 'Game Over']:
+                            game_pk = game.get('gamePk')
+                            logger.info(f"🔍 Getting detailed data for game {game_pk}...")
+                            
+                            # Try the play-by-play API for live at-bat data
+                            pbp_url = f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live"
+                            try:
+                                pbp_response = requests.get(pbp_url)
+                                pbp_data = pbp_response.json()
+                                
+                                logger.info(f"📊 Play-by-play data keys: {list(pbp_data.keys()) if pbp_data else 'No data'}")
+                                
+                                if pbp_data.get('liveData'):
+                                    live_data = pbp_data['liveData']
+                                    logger.info(f"🔴 Live data keys: {list(live_data.keys())}")
+                                    
+                                    # Check for plays
+                                    if live_data.get('plays'):
+                                        plays = live_data['plays']
+                                        all_plays = plays.get('allPlays', [])
+                                        logger.info(f"🎭 Found {len(all_plays)} total plays in game")
+                                        
+                                        # Look for Lindor's at-bats
+                                        for play in all_plays:
+                                            batter = play.get('matchup', {}).get('batter', {})
+                                            batter_id = batter.get('id')
+                                            batter_name = batter.get('fullName', 'Unknown')
+                                            
+                                            if str(batter_id) == str(lindor_id):
+                                                logger.info(f"⚾ Found Lindor at-bat: {play.get('result', {}).get('description', 'Unknown')}")
+                                                logger.info(f"📋 Play details: {play}")
+                                                # Process this at-bat...
+                                            
+                            except Exception as e:
+                                logger.error(f"❌ Error getting play-by-play data: {str(e)}")
+                                
+                else:
+                    logger.info("📅 No Mets games scheduled for today")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error checking schedule: {str(e)}")
             
             # Get Lindor's recent at-bats with enhanced data
+            logger.info("🔍 Checking MLB API for Lindor's recent at-bats...")
             url = f"https://statsapi.mlb.com/api/v1/people/{lindor_id}/stats"
             params = {
                 "stats": "gameLog",
                 "season": datetime.now().year,
                 "group": "hitting"
             }
-            response = requests.get(url, params=params)
-            recent_at_bats = response.json()
             
-            # Also get live game data if available
-            live_game_url = "https://statsapi.mlb.com/api/v1/schedule"
-            live_params = {
-                "sportId": 1,
-                "date": datetime.now().strftime("%m/%d/%Y"),
-                "hydrate": "game(content(editorial(recap))),linescore,team"
-            }
-            live_response = requests.get(live_game_url, params=live_params)
-            live_data = live_response.json()
-            
-            logger.info("Checking MLB API for recent at-bats...")
-            
-            if recent_at_bats and 'stats' in recent_at_bats:
-                for game in recent_at_bats['stats']:
-                    if game.get('date') == datetime.now().strftime("%Y-%m-%d"):
-                        for at_bat in game.get('splits', []):
-                            at_bat_id = f"{game.get('date', 'unknown')}_{at_bat.get('inning', 1)}_{at_bat.get('atBatIndex', 1)}"
+            try:
+                response = requests.get(url, params=params)
+                recent_at_bats = response.json()
+                logger.info(f"📊 Stats API response structure: {list(recent_at_bats.keys()) if recent_at_bats else 'No data'}")
+                
+                if recent_at_bats and 'stats' in recent_at_bats:
+                    logger.info(f"📈 Found {len(recent_at_bats['stats'])} stat groups")
+                    
+                    for stat_group in recent_at_bats['stats']:
+                        splits = stat_group.get('splits', [])
+                        logger.info(f"🎯 Found {len(splits)} games in stat group")
+                        
+                        for game_log in splits:
+                            game_date = game_log.get('date', 'unknown')
+                            logger.info(f"📅 Game date: {game_date}, Today: {today_et}")
                             
-                            if at_bat_id not in processed_at_bats:
-                                logger.info(f"New MLB at-bat found! Processing...")
-                                
-                                # Enhanced play data extraction
-                                result_event = at_bat.get('result', {}).get('event', 'Unknown')
-                                hit_data = at_bat.get('hitData', {})
-                                pitch_data = at_bat.get('pitchData', {})
-                                
-                                play_data = {
-                                    'type': 'home_run' if result_event == 'Home Run' else 'other',
-                                    'description': result_event,
-                                    'exit_velocity': hit_data.get('launchSpeed', 'N/A'),
-                                    'launch_angle': hit_data.get('launchAngle', 'N/A'),
-                                    'distance': hit_data.get('totalDistance', 'N/A'),
-                                    'hit_distance': hit_data.get('totalDistance', 'N/A'),
-                                    'xba': hit_data.get('xba', 'N/A'),
-                                    'barrel_classification': 'Barrel' if hit_data.get('isBarrel') else 'Hard Hit' if hit_data.get('launchSpeed', 0) > 95 else '',
-                                    'situation': get_situational_context(),  # Could be enhanced with real game situation
-                                    'rbi_on_play': at_bat.get('result', {}).get('rbi', 0)
-                                }
-                                
-                                # Add strikeout data if it's a strikeout
-                                if result_event == 'Strikeout':
-                                    play_data.update({
-                                        'strikeout_type': 'looking' if 'called' in at_bat.get('result', {}).get('description', '').lower() else 'swinging',
-                                        'pitch_type': pitch_data.get('type', 'N/A'),
-                                        'pitch_speed': pitch_data.get('startSpeed', 'N/A'),
-                                        'pitch_location': f"Zone {pitch_data.get('zone', 'N/A')}" if pitch_data.get('zone') else 'N/A'
-                                    })
-                                
-                                tweet = format_tweet(play_data)
-                                client.create_tweet(text=tweet)
-                                logger.info(f"Tweeted: {tweet}")
-                                
-                                processed_at_bats.add(at_bat_id)
-                                last_check_status = f"Found at-bat: {result_event} {play_data.get('situation', '')}"
-                                logger.info(f"MLB at-bat processed and tweeted. Total processed: {len(processed_at_bats)}")
+                            if game_date == today_et:
+                                logger.info(f"✅ Found today's game! Stats: {game_log.get('stat', {})}")
+                                # Process the game log data here
                             else:
-                                logger.info(f"MLB at-bat already processed (ID: {at_bat_id}). Skipping...")
+                                logger.info(f"⏭️ Skipping game from {game_date}")
+                else:
+                    logger.info("❌ No stats data found in API response")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error fetching stats: {str(e)}")
             
-            # Clear memory after processing
-            gc.collect()
+            # Also try live game feed API
+            logger.info("🔴 Checking live game feed...")
+            try:
+                live_url = "https://statsapi.mlb.com/api/v1/schedule"
+                live_params = {
+                    "sportId": 1,
+                    "date": today_et,
+                    "hydrate": "game(linescore,boxscore),team"
+                }
+                live_response = requests.get(live_url, params=live_params)
+                live_data = live_response.json()
+                
+                logger.info(f"🔴 Live data structure: {list(live_data.keys()) if live_data else 'No data'}")
+                
+                if live_data.get('dates'):
+                    for date_entry in live_data['dates']:
+                        games = date_entry.get('games', [])
+                        logger.info(f"🎮 Found {len(games)} games in live feed")
+                        
+                        for game in games:
+                            # Check if this game involves the Mets
+                            home_team = game.get('teams', {}).get('home', {}).get('team', {}).get('name', '')
+                            away_team = game.get('teams', {}).get('away', {}).get('team', {}).get('name', '')
+                            
+                            if 'Mets' in home_team or 'Mets' in away_team:
+                                logger.info(f"🏟️ Found Mets game: {away_team} @ {home_team}")
+                                game_state = game.get('status', {}).get('detailedState', 'Unknown')
+                                logger.info(f"🎯 Game state: {game_state}")
+                                
+                                # If game is in progress or final, check for at-bats
+                                if game_state in ['In Progress', 'Final', 'Game Over']:
+                                    game_pk = game.get('gamePk')
+                                    logger.info(f"🔍 Checking game {game_pk} for Lindor at-bats...")
+                                    
+                                    # Get detailed game data
+                                    game_url = f"https://statsapi.mlb.com/api/v1/game/{game_pk}/boxscore"
+                                    game_response = requests.get(game_url)
+                                    game_data = game_response.json()
+                                    
+                                    logger.info(f"📦 Game data keys: {list(game_data.keys()) if game_data else 'No data'}")
+                                    
+            except Exception as e:
+                logger.error(f"❌ Error checking live games: {str(e)}")
             
-            if not last_check_status.startswith("Found") and not last_check_status.startswith("Duplicate"):
-                last_check_status = "No new at-bats found"
-                logger.info("No new at-bats found in MLB API")
+            last_check_status = "No new at-bats found"
+            logger.info("No new at-bats found in MLB API")
         
         last_check_time = datetime.now()
         logger.info(f"Check completed. Status: {last_check_status}")
@@ -569,12 +659,12 @@ def background_checker():
             # Check for at-bats
             check_lindor_at_bats()
             
-            # Send keep-alive ping every 6 minutes (3 cycles of 2 minutes each)
+            # Send keep-alive ping every 4 minutes (2 cycles of 2 minutes each)
             # This ensures we ping well before Render's 15-minute timeout
             ping_counter += 1
-            logger.info(f"📊 Ping counter: {ping_counter}/3")
+            logger.info(f"📊 Ping counter: {ping_counter}/2")
             
-            if ping_counter >= 3:
+            if ping_counter >= 2:
                 logger.info("🏓 Time for keep-alive ping")
                 keep_alive()
                 ping_counter = 0
